@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stanley's Item Manager</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    body { margin: 0; background: #f5f5f7; color: #1a1a1a; }
+    .app { max-width: 640px; margin: 0 auto; padding: 2rem 1rem; }
+    h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+    .item-form { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .item-form input { flex: 1; min-width: 160px; padding: 0.5rem 0.75rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+    .item-form button { padding: 0.5rem 1rem; border: none; border-radius: 6px; background: #2563eb; color: white; font-size: 1rem; cursor: pointer; }
+    .item-form button:disabled { background: #93b4f0; cursor: not-allowed; }
+    .error { background: #fdecea; color: #b3261e; padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 1rem; }
+    .item-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+    .item-row { display: flex; justify-content: space-between; align-items: center; background: white; padding: 0.75rem 1rem; border-radius: 8px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+    .item-row p { margin: 0.25rem 0 0; color: #555; font-size: 0.9rem; }
+    .item-row button { border: none; background: #fdecea; color: #b3261e; padding: 0.4rem 0.75rem; border-radius: 6px; cursor: pointer; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #16181d; color: #eee; }
+      .item-form input { background: #23262e; border-color: #3a3f4b; color: #eee; }
+      .item-row { background: #23262e; box-shadow: none; }
+      .item-row p { color: #aaa; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Stanley's Item Manager</h1>
+
+    <form id="item-form" class="item-form">
+      <input type="text" id="item-name" placeholder="Item name" required />
+      <input type="text" id="item-description" placeholder="Description (optional)" />
+      <button type="submit" id="submit-btn">Add item</button>
+    </form>
+
+    <p id="error" class="error" hidden></p>
+    <p id="status">Loading items&hellip;</p>
+    <ul id="item-list" class="item-list" hidden></ul>
+  </div>
+
+  <script>
+    // Backend base URL, injected at Docker build time (see Dockerfile).
+    // Empty string means "same origin" (useful if the backend is proxied at /api).
+    window.API_URL = "__BACKEND_URL__";
+  </script>
+  <script>
+    const API_URL = window.API_URL && window.API_URL !== '__BACKEND_URL__' ? window.API_URL : '';
+
+    const form = document.getElementById('item-form');
+    const nameInput = document.getElementById('item-name');
+    const descriptionInput = document.getElementById('item-description');
+    const submitBtn = document.getElementById('submit-btn');
+    const errorEl = document.getElementById('error');
+    const statusEl = document.getElementById('status');
+    const listEl = document.getElementById('item-list');
+
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.hidden = false;
+    }
+
+    function clearError() {
+      errorEl.hidden = true;
+      errorEl.textContent = '';
+    }
+
+    async function parseErrorMessage(res, fallback) {
+      try {
+        const body = await res.json();
+        return body.error || fallback;
+      } catch {
+        return fallback;
+      }
+    }
+
+    async function fetchItems() {
+      const res = await fetch(`${API_URL}/api/items`);
+      if (!res.ok) throw new Error(await parseErrorMessage(res, 'Failed to fetch items'));
+      return res.json();
+    }
+
+    async function createItem(item) {
+      const res = await fetch(`${API_URL}/api/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item),
+      });
+      if (!res.ok) throw new Error(await parseErrorMessage(res, 'Failed to create item'));
+      return res.json();
+    }
+
+    async function deleteItem(id) {
+      const res = await fetch(`${API_URL}/api/items/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await parseErrorMessage(res, 'Failed to delete item'));
+    }
+
+    function renderItems(items) {
+      if (items.length === 0) {
+        statusEl.textContent = 'No items yet. Add one above.';
+        statusEl.hidden = false;
+        listEl.hidden = true;
+        listEl.innerHTML = '';
+        return;
+      }
+
+      statusEl.hidden = true;
+      listEl.hidden = false;
+      listEl.innerHTML = '';
+
+      for (const item of items) {
+        const li = document.createElement('li');
+        li.className = 'item-row';
+
+        const info = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = item.name;
+        info.appendChild(strong);
+        if (item.description) {
+          const p = document.createElement('p');
+          p.textContent = item.description;
+          info.appendChild(p);
+        }
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.setAttribute('aria-label', `Delete ${item.name}`);
+        deleteBtn.addEventListener('click', () => handleDelete(item.id));
+
+        li.appendChild(info);
+        li.appendChild(deleteBtn);
+        listEl.appendChild(li);
+      }
+    }
+
+    async function loadItems() {
+      clearError();
+      statusEl.textContent = 'Loading items…';
+      statusEl.hidden = false;
+      listEl.hidden = true;
+      try {
+        const items = await fetchItems();
+        renderItems(items);
+      } catch (err) {
+        statusEl.hidden = true;
+        showError(err.message);
+      }
+    }
+
+    async function handleDelete(id) {
+      clearError();
+      try {
+        await deleteItem(id);
+        await loadItems();
+      } catch (err) {
+        showError(err.message);
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = nameInput.value.trim();
+      if (!name) return;
+      const description = descriptionInput.value.trim() || null;
+
+      clearError();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Adding…';
+      try {
+        await createItem({ name, description });
+        nameInput.value = '';
+        descriptionInput.value = '';
+        await loadItems();
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Add item';
+      }
+    });
+
+    loadItems();
+  </script>
+</body>
+</html>

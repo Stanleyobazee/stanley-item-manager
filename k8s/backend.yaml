@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: item-manager-backend
+  namespace: item-manager
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: item-manager-backend
+  template:
+    metadata:
+      labels:
+        app: item-manager-backend
+    spec:
+      containers:
+        - name: backend
+          # Replace <your-dockerhub-username> before deploying, or let CI push it for you.
+          image: <your-dockerhub-username>/item-manager-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: item-manager-config
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: item-manager-secret
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: item-manager-backend-service
+  namespace: item-manager
+spec:
+  type: NodePort
+  selector:
+    app: item-manager-backend
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30800

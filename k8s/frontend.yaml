@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: item-manager-frontend
+  namespace: item-manager
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: item-manager-frontend
+  template:
+    metadata:
+      labels:
+        app: item-manager-frontend
+    spec:
+      containers:
+        - name: frontend
+          # Replace <your-dockerhub-username> before deploying, or let CI push it for you.
+          # Built with --build-arg BACKEND_URL pointing at item-manager-backend-service's
+          # externally reachable address (see frontend/Dockerfile and README).
+          image: <your-dockerhub-username>/item-manager-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: item-manager-frontend-service
+  namespace: item-manager
+spec:
+  type: NodePort
+  selector:
+    app: item-manager-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
