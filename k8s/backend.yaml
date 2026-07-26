@@ -15,8 +15,7 @@ spec:
     spec:
       containers:
         - name: backend
-          # Replace <your-dockerhub-username> before deploying, or let CI push it for you.
-          image: <your-dockerhub-username>/item-manager-backend:latest
+          image: stanley80/item-manager-backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000

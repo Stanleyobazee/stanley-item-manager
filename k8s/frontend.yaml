@@ -15,10 +15,9 @@ spec:
     spec:
       containers:
         - name: frontend
-          # Replace <your-dockerhub-username> before deploying, or let CI push it for you.
           # Built with --build-arg BACKEND_URL pointing at item-manager-backend-service's
           # externally reachable address (see frontend/Dockerfile and README).
-          image: <your-dockerhub-username>/item-manager-frontend:latest
+          image: stanley80/item-manager-frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80
