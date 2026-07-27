@@ -47,7 +47,7 @@
     window.API_URL = "__BACKEND_URL__";
   </script>
   <script>
-    const API_URL = window.API_URL && window.API_URL !== '__BACKEND_URL__' ? window.API_URL : '';
+    const API_URL = window.API_URL || '';
 
     const form = document.getElementById('item-form');
     const nameInput = document.getElementById('item-name');
