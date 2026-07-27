@@ -6,8 +6,8 @@ metadata:
 data:
   PGHOST: postgres
   PGPORT: "5432"
-  PGUSER: postgres
+  PGUSER: Stanley
   PGDATABASE: itemsdb
   # Update this to match the frontend's externally reachable URL before deploying,
   # e.g. "http://<EC2_PUBLIC_IP>:30080". "*" is fine for local Minikube testing.
-  CORS_ORIGIN: "http://16.16.104.155:8080"
+  CORS_ORIGIN: "http://16.16.194.192:8080"
