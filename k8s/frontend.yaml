@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
         - name: frontend
-          # Built with --build-arg BACKEND_URL pointing at item-manager-backend-service's
-          # externally reachable address (see frontend/Dockerfile and README).
+          # nginx.conf proxies /api/ to item-manager-backend-service internally, so no
+          # BACKEND_URL build-arg is needed for this image (see frontend/Dockerfile).
           image: stanley80/item-manager-frontend:latest
           imagePullPolicy: Always
           ports:

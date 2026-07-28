@@ -53,5 +53,3 @@ jobs:
           context: frontend
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/item-manager-frontend:latest
-          build-args: |
-            BACKEND_URL=${{ vars.BACKEND_URL }}

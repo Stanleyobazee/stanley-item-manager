@@ -54,10 +54,9 @@ metadata:
   name: item-manager-backend-service
   namespace: item-manager
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: item-manager-backend
   ports:
     - port: 3000
       targetPort: 3000
-      nodePort: 30800

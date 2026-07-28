@@ -1,0 +1,15 @@
+[Unit]
+Description=kubectl port-forward for item-manager-frontend-service (exposes it on the EC2 host's public interface)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=KUBECONFIG=/home/ubuntu/.kube/config
+ExecStart=/usr/local/bin/kubectl port-forward service/item-manager-frontend-service 8080:80 --address 0.0.0.0 -n item-manager
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
