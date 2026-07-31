@@ -10,4 +10,4 @@ data:
   PGDATABASE: itemsdb
   # Update this to match the frontend's externally reachable URL before deploying,
   # e.g. "http://<EC2_PUBLIC_IP>:30080". "*" is fine for local Minikube testing.
-  CORS_ORIGIN: "http://:8080"
+  CORS_ORIGIN: "http://13.53.188.225:8080"

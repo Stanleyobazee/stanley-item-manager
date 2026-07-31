@@ -13,8 +13,7 @@ helm/
     ├── namespace.yaml
     ├── configmap.yaml
     ├── secret.yaml
-    ├── postgres-pvc.yaml   # unused (superseded by postgres.yaml's volumeClaimTemplates)
-    ├── postgres.yaml
+    ├── postgres.yaml        # StatefulSet provisions its own PVC via volumeClaimTemplates
     ├── backend.yaml
     └── frontend.yaml
 ```
