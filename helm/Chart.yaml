@@ -1,0 +1,6 @@
+apiVersion: v2
+name: item-manager
+description: A three-tier Kubernetes application - Frontend, Backend and PostgreSQL database
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

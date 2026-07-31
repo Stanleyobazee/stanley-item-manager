@@ -1,0 +1,54 @@
+namespace: item-manager
+
+backend:
+  image: stanley80/item-manager-backend
+  tag: latest
+  replicas: 2
+  port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+frontend:
+  image: stanley80/item-manager-frontend
+  tag: latest
+  replicas: 2
+  port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  nodePort: 30080
+
+postgres:
+  image: postgres
+  tag: 16-alpine
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  storage: 1Gi
+  storageClassName: standard
+
+config:
+  pgHost: postgres
+  pgPort: "5432"
+  pgUser: Stanley
+  pgDatabase: itemsdb
+  # Update this to match the frontend's externally reachable URL before deploying,
+  # e.g. "http://<EC2_PUBLIC_IP>:8080".
+  corsOrigin: "http://:8080"
+
+secret:
+  # Change this before applying to any real environment.
+  postgresPassword: "Stanley_247$"

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: item-manager-config
+  namespace: {{ .Values.namespace }}
+data:
+  PGHOST: {{ .Values.config.pgHost | quote }}
+  PGPORT: {{ .Values.config.pgPort | quote }}
+  PGUSER: {{ .Values.config.pgUser | quote }}
+  PGDATABASE: {{ .Values.config.pgDatabase | quote }}
+  CORS_ORIGIN: {{ .Values.config.corsOrigin | quote }}

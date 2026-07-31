@@ -12,10 +12,12 @@ A simple three-tier application (Frontend → Backend → PostgreSQL) containeri
 │   ├── namespace.yaml
 │   ├── configmap.yaml
 │   ├── secret.yaml
-│   ├── postgres-pvc.yaml
-│   ├── postgres.yaml
-│   ├── backend.yaml
+│   ├── postgres.yaml       # StatefulSet — provisions its own PVC via volumeClaimTemplates
+│   ├── postgres-pvc.yaml   # unused (superseded by postgres.yaml's volumeClaimTemplates)
+│   ├── backend.yaml        # ClusterIP only — never exposed outside the cluster
 │   └── frontend.yaml
+├── deploy/                 # Host-level deploy helpers (e.g. systemd units)
+│   └── item-manager-frontend-forward.service
 └── .github/workflows/      # GitHub Actions CI/CD
     └── ci.yaml
 ```
@@ -50,7 +52,9 @@ Environment variables (all optional, defaults shown):
 
 ## Frontend
 
-Plain static HTML/JS served by nginx — no build step. The backend URL is baked in at Docker build time via `--build-arg BACKEND_URL`:
+Plain static HTML/JS served by nginx — no build step. In Kubernetes, nginx proxies `/api/` requests to the backend's `ClusterIP` Service internally (see `frontend/nginx.conf`), so no backend URL needs to be baked in for that deployment path.
+
+For standalone local testing without Kubernetes (no internal DNS available), pass an absolute `BACKEND_URL` at build time instead:
 
 ```bash
 cd frontend
@@ -66,27 +70,23 @@ Add the following secrets to your GitHub repository (`Settings → Secrets and v
 |---|---|
 | `DOCKERHUB_USERNAME` | Your DockerHub username |
 | `DOCKERHUB_TOKEN` | Your DockerHub access token |
-| `BACKEND_URL` (variable) | Externally reachable backend URL baked into the frontend image |
 
 The pipeline runs on every push to `main`:
 1. Runs backend unit tests
 2. Builds and pushes `item-manager-backend` and `item-manager-frontend` images to DockerHub
 
-## Before Deploying to Kubernetes
-
-Replace `<your-dockerhub-username>` in `k8s/backend.yaml` and `k8s/frontend.yaml` with your actual DockerHub username (or let CI push there and update the manifests to match).
-
 ## Deploy to Minikube
+
+`k8s/backend.yaml` and `k8s/frontend.yaml` already point at `stanley80/item-manager-backend:latest` / `stanley80/item-manager-frontend:latest` — update those if you're pushing to a different DockerHub account. The backend is `ClusterIP`-only and the frontend reaches it via nginx's internal `/api/` proxy, so there's no ordering dependency between them — everything can be applied together:
 
 ```bash
 # Start minikube
 minikube start
 
-# Apply all manifests in order
+# Apply all manifests
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/configmap.yaml
 kubectl apply -f k8s/secret.yaml
-kubectl apply -f k8s/postgres-pvc.yaml
 kubectl apply -f k8s/postgres.yaml
 kubectl apply -f k8s/backend.yaml
 kubectl apply -f k8s/frontend.yaml
@@ -97,6 +97,8 @@ kubectl get pods -n item-manager -w
 # Access the frontend
 minikube service item-manager-frontend-service -n item-manager
 ```
+
+`postgres.yaml` is a StatefulSet — it provisions its own PVC via `volumeClaimTemplates`, so `k8s/postgres-pvc.yaml` is unused (kept only for reference).
 
 ## Updating the App After a New Image Push
 
@@ -127,16 +129,29 @@ http://<EC2_PUBLIC_IP>:8080
 |---|---|---|---|
 | Custom TCP | TCP | 8080 | 0.0.0.0/0 (or your IP) |
 
-**4. To keep it running after disconnecting from the terminal:**
+**4. To keep it running after disconnecting from the terminal — recommended: install it as a systemd service** so it survives disconnects, crashes, and reboots without a terminal open at all:
+```bash
+which kubectl   # confirm this matches deploy/item-manager-frontend-forward.service's ExecStart path
+
+sudo cp deploy/item-manager-frontend-forward.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now item-manager-frontend-forward.service
+sudo systemctl status item-manager-frontend-forward.service
+```
+Logs: `journalctl -u item-manager-frontend-forward.service -f`
+
+Manual alternatives, if you'd rather not install a systemd unit:
 ```bash
 # Using nohup
 nohup kubectl port-forward service/item-manager-frontend-service 8080:80 --address 0.0.0.0 -n item-manager &
 
-# Or using tmux (recommended)
+# Or using tmux
 tmux new -s portforward
 kubectl port-forward service/item-manager-frontend-service 8080:80 --address 0.0.0.0 -n item-manager
 # Press Ctrl+B then D to detach
 ```
+
+The backend Service is `ClusterIP` (internal-only) — it's never reachable from outside the cluster, so it needs no port-forward and no Security Group rule of its own.
 
 ## CORS Configuration
 
@@ -161,6 +176,29 @@ How it works:
 
 ```bash
 kubectl get deployments -n item-manager
+kubectl get statefulsets -n item-manager
 kubectl get services -n item-manager
 kubectl get pods -n item-manager
 ```
+
+## Kubernetes Dashboard (optional)
+
+```bash
+minikube addons enable metrics-server   # optional, adds CPU/memory graphs
+minikube addons enable dashboard
+```
+
+**Don't expose this to the public internet** — Minikube's dashboard addon grants its service account cluster-admin-equivalent access. Access it through an SSH tunnel instead of a public port-forward:
+
+```bash
+# On your local machine:
+ssh -L 8001:localhost:8001 ubuntu@<EC2_PUBLIC_IP>
+
+# In a separate SSH session to EC2 (bound to localhost only, no --address flag):
+kubectl proxy --port=8001
+
+# Get a login token:
+kubectl -n kubernetes-dashboard create token kubernetes-dashboard
+```
+
+Then open `http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/` in your local browser, choose **Token**, and paste it in. See `GUIDE.md` step 13 for more detail.
