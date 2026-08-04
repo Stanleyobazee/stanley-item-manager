@@ -8,7 +8,7 @@ A simple three-tier application (Frontend → Backend → PostgreSQL) containeri
 .
 ├── frontend/               # Nginx-served static HTML/JS
 ├── backend/                # Node.js Express REST API
-├── k8s/                    # Kubernetes manifests
+├── k8s/                    # Kubernetes manifests (kubectl apply, one file at a time)
 │   ├── namespace.yaml
 │   ├── configmap.yaml
 │   ├── secret.yaml
@@ -16,10 +16,15 @@ A simple three-tier application (Frontend → Backend → PostgreSQL) containeri
 │   ├── postgres-pvc.yaml   # unused (superseded by postgres.yaml's volumeClaimTemplates)
 │   ├── backend.yaml        # ClusterIP only — never exposed outside the cluster
 │   └── frontend.yaml
+├── helm/                   # Helm chart — templated equivalent of k8s/, deploy as one release
+│   ├── Chart.yaml
+│   ├── values.yaml
+│   ├── helm-deployment.md
+│   └── templates/
 ├── deploy/                 # Host-level deploy helpers (e.g. systemd units)
 │   └── item-manager-frontend-forward.service
 └── .github/workflows/      # GitHub Actions CI/CD
-    └── ci.yaml
+    └── ci-cd.yaml
 ```
 
 ## Prerequisites
@@ -66,14 +71,21 @@ docker run -p 8080:80 item-manager-frontend
 
 Add the following secrets to your GitHub repository (`Settings → Secrets and variables → Actions`):
 
-| Secret/Variable | Description |
+| Secret | Description |
 |---|---|
 | `DOCKERHUB_USERNAME` | Your DockerHub username |
 | `DOCKERHUB_TOKEN` | Your DockerHub access token |
+| `EC2_HOST` | Public IP/hostname of the EC2 instance running Minikube |
+| `EC2_SSH_KEY` | Private SSH key (PEM) used to connect to that instance as `ubuntu` |
 
-The pipeline runs on every push to `main`:
+`.github/workflows/ci-cd.yaml` runs on every push to `main`:
 1. Runs backend unit tests
 2. Builds and pushes `item-manager-backend` and `item-manager-frontend` images to DockerHub
+3. SSHes into the EC2 instance, pulls the latest code, runs `helm upgrade item-manager ./helm` (picks up any `values.yaml`/template changes), then rolls out the new images with `kubectl rollout restart`
+
+Steps 2 and 3 only run on pushes to `main` — pull requests only run the tests, so a PR from a fork never touches DockerHub or your EC2 instance.
+
+Since step 3 does `git pull origin main` on the EC2 box, keep that checkout's working tree clean (commit config changes like `helm/values.yaml`'s `corsOrigin` through git rather than editing them only on the instance) — an uncommitted local change there would make the pull fail.
 
 ## Deploy to Minikube
 
@@ -100,11 +112,18 @@ minikube service item-manager-frontend-service -n item-manager
 
 `postgres.yaml` is a StatefulSet — it provisions its own PVC via `volumeClaimTemplates`, so `k8s/postgres-pvc.yaml` is unused (kept only for reference).
 
+**Alternative: deploy via Helm.** Instead of applying each manifest above by hand, install the chart in `helm/` as one release:
+```bash
+helm install item-manager ./helm --namespace item-manager --create-namespace
+```
+See `helm/helm-deployment.md` for upgrades, `--set` overrides, and uninstalling.
+
 ## Updating the App After a New Image Push
 
-After CI pushes a new image to DockerHub, trigger a rolling restart:
+If CI/CD's `deploy` job is set up (see above), this happens automatically on every push to `main`. To do it manually — e.g. if you built/pushed an image yourself, or the EC2 instance's `EC2_SSH_KEY` isn't configured yet:
 
 ```bash
+helm upgrade item-manager ./helm -n item-manager   # picks up any values.yaml/template changes
 kubectl rollout restart deployment/item-manager-backend -n item-manager
 kubectl rollout restart deployment/item-manager-frontend -n item-manager
 ```

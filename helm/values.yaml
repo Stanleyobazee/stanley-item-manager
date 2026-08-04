@@ -47,7 +47,7 @@ config:
   pgDatabase: itemsdb
   # Update this to match the frontend's externally reachable URL before deploying,
   # e.g. "http://<EC2_PUBLIC_IP>:8080".
-  corsOrigin: "http://13.53.188.225:8080"
+  corsOrigin: "http://16.192.176.162:8080"
 
 secret:
   # Change this before applying to any real environment.

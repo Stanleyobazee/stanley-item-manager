@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -53,3 +53,23 @@ jobs:
           context: frontend
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/item-manager-frontend:latest
+
+  deploy:
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/stanley-item-manager
+            git pull origin main
+            helm upgrade item-manager ./helm -n item-manager
+            kubectl rollout restart deployment/item-manager-backend -n item-manager
+            kubectl rollout restart deployment/item-manager-frontend -n item-manager
+            kubectl rollout status deployment/item-manager-backend -n item-manager
+            kubectl rollout status deployment/item-manager-frontend -n item-manager

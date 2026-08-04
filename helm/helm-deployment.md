@@ -42,14 +42,19 @@ secret:
 
 ```bash
 # From the project root
-helm install item-manager ./helm
+helm install item-manager ./helm --namespace item-manager --create-namespace
+```
+
+Always pass `--namespace item-manager` — without it, Helm's own release bookkeeping lands in whatever namespace your current `kubectl` context defaults to (usually `default`), even though the chart's templates place the actual resources in `item-manager` regardless. The app still works either way (see `namespace: {{ .Values.namespace }}` in every template), but every later `helm upgrade`/`status`/`uninstall` would then need the matching namespace too, or Helm won't find the release. Simplify this permanently for your shell by setting it as your `kubectl` context default:
+```bash
+kubectl config set-context --current --namespace=item-manager
 ```
 
 ## Verify
 
 ```bash
 # Check all resources are created
-helm status item-manager
+helm status item-manager -n item-manager
 
 # Watch pods come up
 kubectl get pods -n item-manager -w
@@ -78,14 +83,15 @@ After making changes to `values.yaml` or templates:
 helm upgrade item-manager ./helm
 ```
 
-After a new image is pushed to DockerHub:
+After a new image is pushed to DockerHub — `.github/workflows/ci-cd.yaml`'s `deploy` job does this automatically on every push to `main` (via SSH into the EC2 instance), so you normally don't need to run this by hand:
 
 ```bash
 helm upgrade item-manager ./helm
-# or force a rollout restart
 kubectl rollout restart deployment/item-manager-backend -n item-manager
 kubectl rollout restart deployment/item-manager-frontend -n item-manager
 ```
+
+`helm upgrade` alone re-applies `values.yaml`/template changes but won't restart pods for an unchanged `:latest` tag (no diff in the manifest), which is why the rollout restarts are still needed to force a fresh image pull.
 
 ## Override Values at Deploy Time
 
@@ -122,13 +128,19 @@ helm uninstall item-manager
 | `backend.image` | Backend image name | `stanley80/item-manager-backend` |
 | `backend.tag` | Backend image tag | `latest` |
 | `backend.replicas` | Number of backend pods | `2` |
+| `backend.port` | Container/Service port | `3000` |
+| `backend.resources` | Pod CPU/memory requests & limits | see `values.yaml` |
 | `frontend.image` | Frontend image name | `stanley80/item-manager-frontend` |
 | `frontend.tag` | Frontend image tag | `latest` |
 | `frontend.replicas` | Number of frontend pods | `2` |
+| `frontend.port` | Container/Service port | `80` |
 | `frontend.nodePort` | NodePort for frontend service | `30080` |
+| `frontend.resources` | Pod CPU/memory requests & limits | see `values.yaml` |
+| `postgres.image` | Postgres image name | `postgres` |
 | `postgres.tag` | Postgres image tag | `16-alpine` |
 | `postgres.storage` | PVC storage size | `1Gi` |
 | `postgres.storageClassName` | Storage class for PVC | `standard` |
+| `postgres.resources` | Pod CPU/memory requests & limits | see `values.yaml` |
 | `config.pgHost` | Postgres service host | `postgres` |
 | `config.pgPort` | Postgres port | `5432` |
 | `config.pgUser` | Postgres username | `Stanley` |
