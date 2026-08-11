@@ -1,9 +1,37 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const client = require('prom-client');
 
 const PORT = process.env.PORT || 3000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+
+client.register.setDefaultLabels({ app: 'item-manager-backend' });
+client.collectDefaultMetrics();
+
+const httpRequestsTotal = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'route', 'status'],
+});
+
+const httpRequestDurationSeconds = new client.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request duration in seconds',
+  labelNames: ['method', 'route', 'status'],
+  buckets: [0.01, 0.05, 0.1, 0.3, 0.5, 1, 2, 5],
+});
+
+const httpErrorsTotal = new client.Counter({
+  name: 'http_errors_total',
+  help: 'Total HTTP responses with a 4xx or 5xx status',
+  labelNames: ['method', 'route', 'status'],
+});
+
+const httpActiveConnections = new client.Gauge({
+  name: 'http_active_connections',
+  help: 'In-flight HTTP requests',
+});
 
 const pool = new Pool({
   host: process.env.PGHOST || 'localhost',
@@ -21,8 +49,34 @@ const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
 
+app.use((req, res, next) => {
+  httpActiveConnections.inc();
+  const endTimer = httpRequestDurationSeconds.startTimer();
+
+  res.on('finish', () => {
+    // req.route.path is only set once Express matches a route (e.g. /api/items/:id) —
+    // falls back to the raw path for 404s so those still get counted somewhere.
+    const route = req.route ? req.route.path : req.path;
+    const labels = { method: req.method, route, status: res.statusCode };
+
+    httpRequestsTotal.inc(labels);
+    endTimer(labels);
+    if (res.statusCode >= 400) {
+      httpErrorsTotal.inc(labels);
+    }
+    httpActiveConnections.dec();
+  });
+
+  next();
+});
+
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
+});
+
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.end(await client.register.metrics());
 });
 
 app.get('/api/items', async (req, res) => {

@@ -49,10 +49,13 @@ kind: Service
 metadata:
   name: item-manager-backend-service
   namespace: {{ .Values.namespace }}
+  labels:
+    app: item-manager-backend
 spec:
   type: ClusterIP
   selector:
     app: item-manager-backend
   ports:
-    - port: {{ .Values.backend.port }}
+    - name: http
+      port: {{ .Values.backend.port }}
       targetPort: {{ .Values.backend.port }}

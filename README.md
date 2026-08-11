@@ -20,7 +20,14 @@ A simple three-tier application (Frontend → Backend → PostgreSQL) containeri
 │   ├── Chart.yaml
 │   ├── values.yaml
 │   ├── helm-deployment.md
-│   └── templates/
+│   ├── templates/
+│   └── monitoring/         # Prometheus + Grafana stack — see helm/monitoring/README.md
+│       ├── README.md
+│       ├── values-monitoring.yaml
+│       ├── values-postgres-exporter.yaml
+│       ├── servicemonitor.yaml
+│       ├── alert-rules.yaml
+│       └── grafana-dashboard.json
 ├── deploy/                 # Host-level deploy helpers (e.g. systemd units)
 │   └── item-manager-frontend-forward.service
 └── .github/workflows/      # GitHub Actions CI/CD
@@ -81,7 +88,7 @@ Add the following secrets to your GitHub repository (`Settings → Secrets and v
 `.github/workflows/ci-cd.yaml` runs on every push to `main`:
 1. Runs backend unit tests
 2. Builds and pushes `item-manager-backend` and `item-manager-frontend` images to DockerHub
-3. SSHes into the EC2 instance, pulls the latest code, runs `helm upgrade item-manager ./helm` (picks up any `values.yaml`/template changes), then rolls out the new images with `kubectl rollout restart`
+3. SSHes into the EC2 instance (cloning the repo first if it's not there yet), pulls the latest code, runs `helm upgrade --install item-manager ./helm` (picks up any `values.yaml`/template changes, and installs from scratch if the release doesn't exist), then rolls out the new images with `kubectl rollout restart`
 
 Steps 2 and 3 only run on pushes to `main` — pull requests only run the tests, so a PR from a fork never touches DockerHub or your EC2 instance.
 

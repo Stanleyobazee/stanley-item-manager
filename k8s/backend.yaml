@@ -53,10 +53,13 @@ kind: Service
 metadata:
   name: item-manager-backend-service
   namespace: item-manager
+  labels:
+    app: item-manager-backend
 spec:
   type: ClusterIP
   selector:
     app: item-manager-backend
   ports:
-    - port: 3000
+    - name: http
+      port: 3000
       targetPort: 3000
