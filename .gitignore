@@ -4,3 +4,4 @@ dist/
 *.log
 GUIDE.md
 CLAUDE_COMMANDS.md
+helm/monitoring/monitoring.md

@@ -9,13 +9,15 @@ helm/
 ├── Chart.yaml              # Chart metadata
 ├── values.yaml             # Default configuration values
 ├── helm-deployment.md      # This file
-└── templates/
-    ├── namespace.yaml
-    ├── configmap.yaml
-    ├── secret.yaml
-    ├── postgres.yaml        # StatefulSet provisions its own PVC via volumeClaimTemplates
-    ├── backend.yaml
-    └── frontend.yaml
+├── templates/
+│   ├── namespace.yaml
+│   ├── configmap.yaml
+│   ├── secret.yaml
+│   ├── postgres.yaml       # StatefulSet provisions its own PVC via volumeClaimTemplates
+│   ├── backend.yaml
+│   └── frontend.yaml
+└── monitoring/             # Prometheus + Grafana stack — separate from this chart,
+                             # installed as its own Helm release. See monitoring/README.md.
 ```
 
 ## Prerequisites

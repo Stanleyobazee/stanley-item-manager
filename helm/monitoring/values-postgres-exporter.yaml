@@ -1,0 +1,18 @@
+# See README.md ("Install", step 2) for the full install command.
+
+extraEnv:
+  - name: DATA_SOURCE_NAME
+    value: ""   # set via --set-string at install time — see README.md
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+serviceMonitor:
+  enabled: true
+  namespace: item-manager
+  interval: 30s

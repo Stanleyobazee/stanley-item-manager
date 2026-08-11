@@ -1,0 +1,90 @@
+# See README.md ("Resource constraints") before installing on a memory-constrained node.
+
+fullnameOverride: monitoring
+
+alertmanager:
+  enabled: true
+  config:
+    global:
+      resolve_timeout: 5m
+      smtp_smarthost: "smtp.gmail.com:587"
+      smtp_from: "example@gmail.com"
+      smtp_auth_username: "example@gmail.com"
+      smtp_require_tls: true
+      # smtp_auth_password intentionally not set here — pass via
+      # --set alertmanager.config.global.smtp_auth_password=<value> at install time
+    route:
+      receiver: email-notifications
+      group_by: ["alertname", "namespace"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+    receivers:
+      - name: email-notifications
+        email_configs:
+          - to: "example@gmail.com"
+            send_resolved: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+grafana:
+  enabled: true
+  adminPassword: "changeme"   # override via --set grafana.adminPassword=<value> at install time
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 200m
+      memory: 192Mi
+  service:
+    type: ClusterIP
+
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 300m
+        memory: 512Mi
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+kubelet:
+  enabled: true
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 200m
+      memory: 192Mi

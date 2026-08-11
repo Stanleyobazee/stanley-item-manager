@@ -66,9 +66,10 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            cd ~/stanley-item-manager || git clone https://github.com/${{ github.repository }}.git ~/stanley-item-manager
             cd ~/stanley-item-manager
             git pull origin main
-            helm upgrade item-manager ./helm -n item-manager
+            helm upgrade --install item-manager ./helm -n item-manager --create-namespace
             kubectl rollout restart deployment/item-manager-backend -n item-manager
             kubectl rollout restart deployment/item-manager-frontend -n item-manager
             kubectl rollout status deployment/item-manager-backend -n item-manager

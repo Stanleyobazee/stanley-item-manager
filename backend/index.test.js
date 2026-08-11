@@ -32,3 +32,15 @@ describe('DELETE /api/items/:id', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('GET /metrics', () => {
+  it('exposes Prometheus-formatted metrics, including counts from prior requests in this run', async () => {
+    await request(app).get('/health');
+
+    const res = await request(app).get('/metrics');
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/plain/);
+    expect(res.text).toContain('http_requests_total');
+    expect(res.text).toContain('http_request_duration_seconds');
+  });
+});
