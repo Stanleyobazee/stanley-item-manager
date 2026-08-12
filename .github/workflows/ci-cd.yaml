@@ -68,6 +68,7 @@ jobs:
           script: |
             cd ~/stanley-item-manager || git clone https://github.com/${{ github.repository }}.git ~/stanley-item-manager
             cd ~/stanley-item-manager
+            git checkout main
             git pull origin main
             helm upgrade --install item-manager ./helm -n item-manager --create-namespace
             kubectl rollout restart deployment/item-manager-backend -n item-manager
