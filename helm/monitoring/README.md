@@ -54,14 +54,17 @@ helm install monitoring prometheus-community/kube-prometheus-stack \
 ```
 Before running this, replace the placeholder `smtp_smarthost`/`smtp_from`/`smtp_auth_username`/`receivers[0].email_configs[0].to` values in `values-monitoring.yaml`'s `alertmanager.config` with your real SMTP details — only the password stays out of the file, passed via `--set` above.
 
-**2. Postgres exporter** (separate release, into `item-manager`'s namespace):
+**2. Postgres exporter** (separate release, into `item-manager`'s namespace). The
+`export` line below needs editing before you run it — swap in the actual password from
+`helm/values.yaml`'s `secret.postgresPassword` (or `k8s/secret.yaml`), keeping the single
+quotes (safest way to hold a literal `$` in bash):
 ```bash
-export POSTGRES_PASSWORD="<the same password as helm/values.yaml's secret.postgresPassword>"
+export POSTGRES_PASSWORD='REPLACE_WITH_REAL_PASSWORD'
 
 helm install postgres-exporter prometheus-community/prometheus-postgres-exporter \
   -n item-manager \
   -f helm/monitoring/values-postgres-exporter.yaml \
-  --set-string "extraEnv[0].value=postgresql://Stanley:${POSTGRES_PASSWORD}@postgres.item-manager.svc.cluster.local:5432/itemsdb?sslmode=disable"
+  --set-string config.datasource.password="${POSTGRES_PASSWORD}"
 ```
 
 **3. Backend ServiceMonitor and alert rules:**
@@ -155,11 +158,21 @@ http_active_connections{app="item-manager-backend"}
 Same tunnel pattern:
 
 ```bash
-kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090:9090
+kubectl port-forward -n monitoring svc/monitoring-prometheus 9090:9090
 ```
 
 Open `http://localhost:9090`, then check **Status → Targets** to confirm what's being
 scraped, and **Alerts** to see the rules from `alert-rules.yaml` and whether any are firing.
+
+## Accessing Alertmanager
+
+Same tunnel pattern:
+
+```bash
+kubectl port-forward -n monitoring svc/monitoring-alertmanager 9093:9093
+```
+
+Open `http://localhost:9093` to see currently firing alerts and any active silences.
 
 ## Uninstall
 
