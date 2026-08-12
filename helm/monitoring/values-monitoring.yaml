@@ -8,8 +8,8 @@ alertmanager:
     global:
       resolve_timeout: 5m
       smtp_smarthost: "smtp.gmail.com:587"
-      smtp_from: "example@gmail.com"
-      smtp_auth_username: "example@gmail.com"
+      smtp_from: "stanleyobazee@gmail.com"
+      smtp_auth_username: "stanleyobazee@gmail.com"
       smtp_require_tls: true
       # smtp_auth_password intentionally not set here — pass via
       # --set alertmanager.config.global.smtp_auth_password=<value> at install time
@@ -34,7 +34,7 @@ alertmanager:
     receivers:
       - name: email-notifications
         email_configs:
-          - to: "example@gmail.com"
+          - to: "stanleyobazee@gmail.com"
             send_resolved: true
       - name: "null"
   alertmanagerSpec:
