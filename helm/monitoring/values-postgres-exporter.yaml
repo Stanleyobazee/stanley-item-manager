@@ -1,8 +1,14 @@
 # See README.md ("Install", step 2) for the full install command.
+# config.datasource.password is deliberately absent — passed via
+# --set-string config.datasource.password=<value> at install time, never committed.
 
-extraEnv:
-  - name: DATA_SOURCE_NAME
-    value: ""   # set via --set-string at install time — see README.md
+config:
+  datasource:
+    host: postgres.item-manager.svc.cluster.local
+    port: "5432"
+    user: Stanley
+    database: itemsdb
+    sslmode: disable
 
 resources:
   requests:
