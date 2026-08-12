@@ -8,8 +8,8 @@ alertmanager:
     global:
       resolve_timeout: 5m
       smtp_smarthost: "smtp.gmail.com:587"
-      smtp_from: "example@gmail.com"
-      smtp_auth_username: "example@gmail.com"
+      smtp_from: "stanleyobazee@gmail.com"
+      smtp_auth_username: "stanleyobazee@gmail.com"
       smtp_require_tls: true
       # smtp_auth_password intentionally not set here — pass via
       # --set alertmanager.config.global.smtp_auth_password=<value> at install time
@@ -19,11 +19,24 @@ alertmanager:
       group_wait: 30s
       group_interval: 5m
       repeat_interval: 4h
+      routes:
+        # Watchdog/InfoInhibitor are kube-prometheus-stack's built-in housekeeping alerts —
+        # routed to the null receiver below so they don't generate email. Kept explicit here
+        # (rather than relying on the chart's own defaults) because Helm replaces the whole
+        # `receivers` list on override instead of merging it — leaving these implicit would
+        # leave `route.routes` pointing at a receiver that no longer exists.
+        - receiver: "null"
+          matchers:
+            - alertname = "Watchdog"
+        - receiver: "null"
+          matchers:
+            - alertname = "InfoInhibitor"
     receivers:
       - name: email-notifications
         email_configs:
-          - to: "example@gmail.com"
+          - to: "stanleyobazee@gmail.com"
             send_resolved: true
+      - name: "null"
   alertmanagerSpec:
     resources:
       requests:
