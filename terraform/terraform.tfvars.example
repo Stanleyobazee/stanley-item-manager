@@ -1,0 +1,20 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored — never commit it. Double check:
+#   grep "terraform.tfvars" ../.gitignore
+
+aws_region = "REPLACE_WITH_YOUR_EC2_INSTANCE_REGION" # e.g. "eu-north-1" — must match the existing EC2 box's region
+
+github_repository = "Stanleyobazee/stanley-item-manager"
+github_branch     = "eks" # matches the branch this is being tested on — change to "main" (and re-apply) once merged
+
+# Real secret values — these end up in terraform.tfstate (see README.md's "State file now
+# contains real secrets" section for what that means for protecting the state bucket).
+postgres_password          = "REPLACE_WITH_A_REAL_PASSWORD"
+alertmanager_smtp_password = "REPLACE_WITH_A_REAL_GMAIL_APP_PASSWORD"
+
+# Uncomment to override defaults — see variables.tf for what each one does:
+# project_name       = "item-manager-eks"
+# k8s_namespace      = "item-manager"
+# kubernetes_version = "1.31"
+# node_instance_type = "t3.medium"
+# node_desired_size  = 1

@@ -16,6 +16,7 @@ spec:
       labels:
         app: postgres
     spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
       containers:
         - name: postgres
           image: "{{ .Values.postgres.image }}:{{ .Values.postgres.tag }}"
@@ -42,6 +43,11 @@ spec:
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data
+            {{- if .Values.secretsManager.enabled }}
+            - name: aws-secrets
+              mountPath: /mnt/secrets-store
+              readOnly: true
+            {{- end }}
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", {{ .Values.config.pgUser | quote }}]
@@ -54,6 +60,19 @@ spec:
             periodSeconds: 20
           resources:
             {{- toYaml .Values.postgres.resources | nindent 12 }}
+      {{- if .Values.secretsManager.enabled }}
+      volumes:
+        # Same reasoning as backend.yaml — at least one pod mounting the SecretProviderClass
+        # is required to trigger the CSI sync. Postgres and the backend both mounting it is
+        # redundant but harmless; simplest to keep both, rather than relying on pod
+        # scheduling order between the two.
+        - name: aws-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: item-manager-aws-secrets
+      {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: postgres-storage

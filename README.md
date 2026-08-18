@@ -2,6 +2,30 @@
 
 A simple three-tier application (Frontend → Backend → PostgreSQL) containerized with Docker and deployed to Kubernetes via Minikube.
 
+## Deployment Paths
+
+Two independent, parallel paths — same app, same Helm chart, different targets. Each
+follows the same shape:
+
+```
+GitHub repo
+    │
+    ├── push to main ─────────► ci-cd.yaml ─────────► SSH + helm ─────────► EC2 + Minikube
+    │
+    └── workflow_dispatch ────► deploy-eks.yaml ────► OIDC + helm ─────────► AWS EKS
+```
+
+| | Minikube / EC2 (primary) | AWS EKS (session-based) |
+|---|---|---|
+| Trigger | Every push to `main` | Manual (`workflow_dispatch`) |
+| Values file | `helm/values.yaml` | `helm/values.yaml` + `helm/values-eks.yaml` |
+| Images | DockerHub | ECR |
+| Cost | ~$15-20/month, always on | ~$160/month if left running — see `terraform/README.md` |
+
+The Minikube/EC2 path (documented below) is the primary, always-on environment. The EKS path
+(`## EKS Deployment (AWS)` further down) is separate infrastructure, provisioned via
+Terraform, meant to be spun up for a session and torn down after — not a replacement.
+
 ## Project Structure
 
 ```
@@ -18,21 +42,38 @@ A simple three-tier application (Frontend → Backend → PostgreSQL) containeri
 │   └── frontend.yaml
 ├── helm/                   # Helm chart — templated equivalent of k8s/, deploy as one release
 │   ├── Chart.yaml
-│   ├── values.yaml
+│   ├── values.yaml         # Minikube path (default)
+│   ├── values-eks.yaml     # EKS path overrides — see terraform/README.md
 │   ├── helm-deployment.md
 │   ├── templates/
+│   ├── eks/
+│   │   └── storageclass-gp3.yaml   # applied once via kubectl, EKS only
 │   └── monitoring/         # Prometheus + Grafana stack — see helm/monitoring/README.md
 │       ├── README.md
 │       ├── values-monitoring.yaml
+│       ├── values-monitoring-eks.yaml   # EKS overrides — Alertmanager SMTP via CSI, not --set
 │       ├── values-postgres-exporter.yaml
 │       ├── servicemonitor.yaml
 │       ├── alert-rules.yaml
-│       └── grafana-dashboard.json
+│       ├── grafana-dashboard.json
+│       └── eks/
+│           └── secretprovider-alertmanager.yaml   # applied once via kubectl, EKS only
+├── terraform/              # AWS infra for the EKS path (VPC, EKS, ECR, IAM/OIDC, Secrets Manager) — see terraform/README.md
+├── SECRETS.md              # OIDC + Secrets Manager guide for the EKS path
 ├── deploy/                 # Host-level deploy helpers (e.g. systemd units)
 │   └── item-manager-frontend-forward.service
 └── .github/workflows/      # GitHub Actions CI/CD
-    └── ci-cd.yaml
+    ├── ci-cd.yaml          # Minikube/EC2 path — auto-deploys on push to main
+    └── deploy-eks.yaml     # EKS path — manual (workflow_dispatch) only
 ```
+
+## EKS Deployment (AWS)
+
+A separate, parallel deployment path to AWS EKS via Terraform — alongside, not replacing,
+the Minikube/EC2 path documented below. **Read `terraform/README.md` first** — EKS has a
+real, unavoidable ~$73/month fixed cost (the control plane, plus a NAT Gateway) that can't be
+paused the way the EC2 box can, only torn down via `terraform destroy`. See `SECRETS.md` for
+how GitHub OIDC and AWS Secrets Manager work together on this path.
 
 ## Prerequisites
 

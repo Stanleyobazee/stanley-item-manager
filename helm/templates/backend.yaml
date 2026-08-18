@@ -14,6 +14,7 @@ spec:
       labels:
         app: item-manager-backend
     spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
       containers:
         - name: backend
           image: "{{ .Values.backend.image }}:{{ .Values.backend.tag }}"
@@ -43,6 +44,25 @@ spec:
             periodSeconds: 20
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+          {{- if .Values.secretsManager.enabled }}
+          volumeMounts:
+            - name: aws-secrets
+              mountPath: /mnt/secrets-store
+              readOnly: true
+          {{- end }}
+      {{- if .Values.secretsManager.enabled }}
+      volumes:
+        # Mounting this volume is what actually triggers the CSI driver to fetch from
+        # Secrets Manager and sync item-manager-secret (see secretproviderclass.yaml) —
+        # the app itself doesn't read files from mountPath, it still reads
+        # POSTGRES_PASSWORD via the regular secretKeyRef env var above.
+        - name: aws-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: item-manager-aws-secrets
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

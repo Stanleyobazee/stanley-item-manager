@@ -1,0 +1,44 @@
+# EKS overrides — applied on top of values.yaml, not a replacement for it:
+#   helm upgrade --install item-manager ./helm -f helm/values.yaml -f helm/values-eks.yaml
+#
+# Only the settings that actually differ from the Minikube path live here. Fill in the
+# REPLACE_ME placeholders from `terraform output` (see terraform/README.md) before installing.
+
+backend:
+  image: REPLACE_ME_ECR_BACKEND_URL # terraform output ecr_backend_url
+  tag: latest
+
+frontend:
+  image: REPLACE_ME_ECR_FRONTEND_URL # terraform output ecr_frontend_url
+  tag: latest
+  # LoadBalancer instead of Minikube's NodePort — EKS provisions a real ELB with a public
+  # hostname. See helm/templates/frontend.yaml for how this is conditionally rendered.
+  serviceType: LoadBalancer
+
+postgres:
+  # Minikube's hostpath-backed "standard" StorageClass doesn't exist on EKS — gp3 needs the
+  # EBS CSI driver (a Terraform-managed EKS add-on) and the StorageClass object applied once
+  # via `kubectl apply -f helm/eks/storageclass-gp3.yaml` before this chart is installed.
+  storageClassName: gp3
+
+config:
+  # Only known after the frontend's LoadBalancer Service is created — update this and
+  # re-run `helm upgrade` once you have it:
+  #   kubectl get svc item-manager-frontend-service -n item-manager
+  corsOrigin: "http://REPLACE_ME_LOADBALANCER_HOSTNAME"
+
+# Switches helm/templates/secret.yaml's plaintext Secret OFF and turns on the
+# SecretProviderClass + CSI-synced-secret path instead (helm/templates/secretproviderclass.yaml).
+# The Minikube path (values.yaml alone, no this file) is completely unaffected — its
+# plaintext secret.yaml still renders exactly as before.
+secretsManager:
+  enabled: true
+  postgresSecretArn: REPLACE_ME_POSTGRES_SECRET_ARN # terraform output postgres_secret_arn
+
+# IRSA-annotated ServiceAccount, mounted by backend + postgres pods so the CSI driver can
+# authenticate to Secrets Manager as this specific pod identity — see
+# helm/templates/serviceaccount.yaml.
+serviceAccount:
+  create: true
+  name: item-manager-eks-sa
+  roleArn: REPLACE_ME_APP_SECRETS_ROLE_ARN # terraform output app_secrets_role_arn

@@ -52,3 +52,15 @@ config:
 secret:
   # Change this before applying to any real environment.
   postgresPassword: "Stanley_247$"
+
+# EKS-only — always defined here (even though unused on Minikube) so templates can safely
+# reference .Values.secretsManager.enabled / .Values.serviceAccount.* without a nil-pointer
+# template error. Real values come from helm/values-eks.yaml, never from here.
+secretsManager:
+  enabled: false
+  postgresSecretArn: ""
+
+serviceAccount:
+  create: false
+  name: default
+  roleArn: ""
