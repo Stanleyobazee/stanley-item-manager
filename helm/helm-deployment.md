@@ -7,18 +7,57 @@ This Helm chart packages the entire three-tier application (Frontend → Backend
 ```
 helm/
 ├── Chart.yaml              # Chart metadata
-├── values.yaml             # Default configuration values
+├── values.yaml             # Default configuration values (Minikube path)
+├── values-eks.yaml         # EKS path overrides — applied on top of values.yaml, not instead of it. See ../terraform/README.md.
 ├── helm-deployment.md      # This file
 ├── templates/
 │   ├── namespace.yaml
 │   ├── configmap.yaml
-│   ├── secret.yaml
+│   ├── secret.yaml               # Minikube only when secretsManager.enabled is false (the default)
+│   ├── secretproviderclass.yaml  # EKS only — syncs Secrets Manager into the same Secret name/key
+│   ├── serviceaccount.yaml       # EKS only — IRSA-annotated
 │   ├── postgres.yaml       # StatefulSet provisions its own PVC via volumeClaimTemplates
 │   ├── backend.yaml
 │   └── frontend.yaml
+├── eks/
+│   └── storageclass-gp3.yaml   # EKS only — applied once via kubectl, not chart-managed
 └── monitoring/             # Prometheus + Grafana stack — separate from this chart,
                              # installed as its own Helm release. See monitoring/README.md.
 ```
+
+The `secretproviderclass.yaml`/`serviceaccount.yaml`/EKS branches inside `secret.yaml`,
+`backend.yaml`, and `postgres.yaml` all render as no-ops unless `secretsManager.enabled` is
+explicitly set (only `values-eks.yaml` sets it) — installing with `values.yaml` alone behaves
+exactly as it always has.
+
+## Request Flow
+
+What a single "list items" request actually crosses once this chart is installed:
+
+```
+Browser
+  │  GET http://<frontend-address>/
+  ▼
+item-manager-frontend-service  (NodePort 30080 on Minikube, LoadBalancer on EKS)
+  ▼
+frontend Pod (nginx)
+  │  GET /api/items  ──►  nginx.conf proxies /api/ internally, no BACKEND_URL baked in
+  ▼
+item-manager-backend-service  (ClusterIP :3000 — never reachable from outside the cluster)
+  ▼
+backend Pod (Express)
+  │  SELECT * FROM items
+  ▼
+postgres Service  (headless, ClusterIP: None)
+  ▼
+postgres-0 Pod (StatefulSet)
+  │  reads/writes
+  ▼
+postgres-storage PVC  (volumeClaimTemplates — standard/gp3 depending on path)
+```
+
+The backend Service being `ClusterIP`-only (not `NodePort`/`LoadBalancer`) is deliberate —
+the only Service ever meant to be reached from outside the cluster is the frontend's.
 
 ## Prerequisites
 

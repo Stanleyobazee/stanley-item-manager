@@ -1,0 +1,39 @@
+# EKS overrides — applied on top of values-monitoring.yaml, not a replacement:
+#   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace \
+#     -f helm/monitoring/values-monitoring.yaml -f helm/monitoring/values-monitoring-eks.yaml \
+#     --set grafana.adminPassword="<a-real-password>"
+#
+# Only Alertmanager's SMTP credential handling differs from Minikube — Prometheus, Grafana,
+# and the exporters are identical, reused as-is from values-monitoring.yaml. On Minikube the
+# SMTP password is passed via --set at install time; on EKS it's read from a file mounted by
+# the Secrets Store CSI driver instead (see ../eks/secretprovider-alertmanager.yaml and
+# ../../SECRETS.md), so no --set flag for it is needed or used here.
+
+alertmanager:
+  serviceAccount:
+    create: true
+    # Named explicitly rather than left to the chart's auto-generated default — this exact
+    # name is what terraform/main.tf's alertmanager_secrets IRSA role trust policy is scoped
+    # to. If you rename this, update that trust policy and re-apply.
+    name: monitoring-alertmanager-eks-sa
+    annotations:
+      eks.amazonaws.com/role-arn: REPLACE_ME_ALERTMANAGER_SECRETS_ROLE_ARN # terraform output alertmanager_secrets_role_arn
+  alertmanagerSpec:
+    volumes:
+      - name: aws-secrets
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: alertmanager-aws-secrets
+    volumeMounts:
+      - name: aws-secrets
+        mountPath: /mnt/secrets-store
+        readOnly: true
+  config:
+    global:
+      # smtp_auth_password_file replaces smtp_auth_password entirely for this path — the two
+      # are mutually exclusive in Alertmanager's config schema. The filename here matches the
+      # objectAlias set in ../eks/secretprovider-alertmanager.yaml.
+      smtp_auth_password_file: /mnt/secrets-store/smtp-password

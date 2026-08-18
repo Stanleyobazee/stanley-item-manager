@@ -5,3 +5,14 @@ dist/
 GUIDE.md
 CLAUDE_COMMANDS.md
 helm/monitoring/monitoring.md
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+terraform/crash.log
+terraform/override.tf
+terraform/override.tf.json
+*.tfplan
+SECRETS.md

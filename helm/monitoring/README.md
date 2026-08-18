@@ -5,17 +5,49 @@ Prometheus + Grafana monitoring for the `item-manager` Kubernetes cluster, built
 `ServiceMonitor` and alerting rules. **Read "Resource constraints" below before installing**
 this on the same EC2 box the app runs on.
 
+This file covers the Minikube/EC2 path. The same stack also runs on the EKS path — see
+`values-monitoring-eks.yaml` below and `../../SECRETS.md` for how Alertmanager's SMTP
+credential is handled differently there (Secrets Manager + CSI, not `--set`).
+
 ## Directory Structure
 
 ```
 helm/monitoring/
 ├── README.md                       # This file — quick command reference
 ├── values-monitoring.yaml           # Values for the kube-prometheus-stack chart (Prometheus, Grafana, Alertmanager, node-exporter, kube-state-metrics)
+├── values-monitoring-eks.yaml       # EKS overrides — see ../../SECRETS.md
 ├── values-postgres-exporter.yaml    # Values for prometheus-postgres-exporter (separate release)
 ├── servicemonitor.yaml               # Tells Prometheus to scrape the backend's /metrics
 ├── alert-rules.yaml                 # PrometheusRule — alerting rules
-└── grafana-dashboard.json           # Custom "Item Manager Overview" dashboard
+├── grafana-dashboard.json           # Custom "Item Manager Overview" dashboard
+└── eks/
+    └── secretprovider-alertmanager.yaml   # EKS only — applied once via kubectl
 ```
+
+## Data Flow
+
+```
+Scrape targets (pulled every 30s)
+  backend pods (/metrics) ─────┐
+  postgres-exporter ───────────┤
+  node-exporter ────────────────┼──────►  ┌────────────┐
+  kubelet / cAdvisor ───────────┘         │ Prometheus │
+                                           └─────┬──────┘
+                              ┌────────────────────┴────────────────────┐
+                              │ PromQL query                 alert-rules.yaml
+                              ▼                                         ▼
+                        ┌──────────┐                            ┌──────────────┐
+                        │ Grafana  │                            │ Alertmanager │
+                        └──────────┘                            └──────┬───────┘
+                                                                        │ email
+                                                                        ▼
+                                                                  your inbox
+```
+
+Every scrape arrow is Prometheus *pulling* on a fixed interval — nothing pushes metrics to
+it. Grafana and Alertmanager never talk to the scrape targets directly, only to Prometheus.
+Reaching Grafana/Prometheus/Alertmanager yourself is via SSH tunnel + `kubectl
+port-forward` only (see "Accessing Grafana" below) — never a public NodePort.
 
 ## Resource constraints — read this before installing
 

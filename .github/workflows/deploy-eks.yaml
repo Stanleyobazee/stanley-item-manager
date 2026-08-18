@@ -1,0 +1,161 @@
+name: Deploy to EKS
+
+# Manual only — this environment is session-based (spin up via terraform apply, tear down
+# via terraform destroy when done, see terraform/README.md). A push-triggered workflow would
+# either fail whenever the cluster's torn down, or quietly pressure leaving it up so pushes
+# keep working. This workflow is fully separate from ci-cd.yaml (the always-on EC2/Minikube
+# pipeline), which is untouched by this file.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # required to request the OIDC token
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_BACKEND_URL: ${{ vars.ECR_BACKEND_URL }}
+  ECR_FRONTEND_URL: ${{ vars.ECR_FRONTEND_URL }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  POSTGRES_SECRET_ARN: ${{ vars.POSTGRES_SECRET_ARN }}
+  APP_SECRETS_ROLE_ARN: ${{ vars.APP_SECRETS_ROLE_ARN }}
+  ALERTMANAGER_SECRET_ARN: ${{ vars.ALERTMANAGER_SECRET_ARN }}
+  ALERTMANAGER_SECRETS_ROLE_ARN: ${{ vars.ALERTMANAGER_SECRETS_ROLE_ARN }}
+  CORS_ORIGIN: ${{ vars.CORS_ORIGIN }}
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+
+  build-and-push-ecr:
+    needs: backend-test
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ env.ECR_BACKEND_URL }}:${{ steps.tag.outputs.value }}
+            ${{ env.ECR_BACKEND_URL }}:latest
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ${{ env.ECR_FRONTEND_URL }}:${{ steps.tag.outputs.value }}
+            ${{ env.ECR_FRONTEND_URL }}:latest
+
+  deploy:
+    needs: build-and-push-ecr
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name "${{ env.EKS_CLUSTER_NAME }}" --region "${{ env.AWS_REGION }}"
+
+      - name: Install Secrets Store CSI Driver (idempotent — safe to re-run every deploy)
+        run: |
+          helm repo add secrets-store-csi-driver https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts
+          helm repo add aws-secrets-manager https://aws.github.io/secrets-store-csi-driver-provider-aws
+          helm repo update
+
+          helm upgrade --install csi-secrets-store secrets-store-csi-driver/secrets-store-csi-driver \
+            -n kube-system --set syncSecret.enabled=true --wait
+
+          helm upgrade --install secrets-provider-aws aws-secrets-manager/secrets-store-csi-driver-provider-aws \
+            -n kube-system --wait
+
+      - name: Deploy app via Helm
+        run: |
+          helm upgrade --install item-manager ./helm \
+            -f helm/values.yaml \
+            -f helm/values-eks.yaml \
+            --set backend.image=${{ env.ECR_BACKEND_URL }} \
+            --set backend.tag=${{ needs.build-and-push-ecr.outputs.image-tag }} \
+            --set frontend.image=${{ env.ECR_FRONTEND_URL }} \
+            --set frontend.tag=${{ needs.build-and-push-ecr.outputs.image-tag }} \
+            --set secretsManager.postgresSecretArn=${{ env.POSTGRES_SECRET_ARN }} \
+            --set serviceAccount.roleArn=${{ env.APP_SECRETS_ROLE_ARN }} \
+            --set config.corsOrigin=${{ env.CORS_ORIGIN }} \
+            -n item-manager --create-namespace --wait --timeout 5m
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/item-manager-backend -n item-manager
+          kubectl rollout status deployment/item-manager-frontend -n item-manager
+
+      - name: Deploy monitoring stack
+        run: |
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+          # secretprovider-alertmanager.yaml is a plain manifest, not a Helm template — sed
+          # the real secret ARN in before applying (values-eks.yaml's REPLACE_ME_* placeholders
+          # are handled above via --set instead, since that file IS a Helm values file).
+          sed "s|REPLACE_ME_ALERTMANAGER_SECRET_ARN|${{ env.ALERTMANAGER_SECRET_ARN }}|" \
+            helm/monitoring/eks/secretprovider-alertmanager.yaml | kubectl apply -f -
+
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+
+          helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+            -n monitoring --create-namespace \
+            -f helm/monitoring/values-monitoring.yaml \
+            -f helm/monitoring/values-monitoring-eks.yaml \
+            --set grafana.adminPassword=${{ secrets.GRAFANA_ADMIN_PASSWORD }} \
+            --set alertmanager.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${{ env.ALERTMANAGER_SECRETS_ROLE_ARN }} \
+            --wait --timeout 10m
+
+          kubectl apply -f helm/monitoring/servicemonitor.yaml
+          kubectl apply -f helm/monitoring/alert-rules.yaml
+
+          kubectl create configmap item-manager-dashboard \
+            -n monitoring --from-file=helm/monitoring/grafana-dashboard.json \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label configmap item-manager-dashboard -n monitoring grafana_dashboard=1 --overwrite
+
+      - name: Print frontend LoadBalancer URL
+        run: kubectl get svc item-manager-frontend-service -n item-manager -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
