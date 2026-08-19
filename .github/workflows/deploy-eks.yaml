@@ -125,7 +125,13 @@ jobs:
         # first run, before the LoadBalancer hostname exists yet) or contains shell-special
         # characters. All values quoted so emptiness is never ambiguous with a missing arg.
         run: |
-          helm upgrade --install item-manager ./helm -f helm/values.yaml -f helm/values-eks.yaml --set backend.image="$ECR_BACKEND_URL" --set backend.tag="$IMAGE_TAG" --set frontend.image="$ECR_FRONTEND_URL" --set frontend.tag="$IMAGE_TAG" --set secretsManager.postgresSecretArn="$POSTGRES_SECRET_ARN" --set serviceAccount.roleArn="$APP_SECRETS_ROLE_ARN" --set config.corsOrigin="$CORS_ORIGIN" -n item-manager --create-namespace --wait --timeout 5m
+          # Helm's --create-namespace errors out ("already exists") if the namespace exists
+          # but wasn't created by Helm itself (e.g. from earlier manual kubectl/helm testing
+          # against this cluster) — same idempotent apply pattern already used below for the
+          # monitoring namespace, so re-running this step is always safe either way.
+          kubectl create namespace item-manager --dry-run=client -o yaml | kubectl apply -f -
+
+          helm upgrade --install item-manager ./helm -f helm/values.yaml -f helm/values-eks.yaml --set backend.image="$ECR_BACKEND_URL" --set backend.tag="$IMAGE_TAG" --set frontend.image="$ECR_FRONTEND_URL" --set frontend.tag="$IMAGE_TAG" --set secretsManager.postgresSecretArn="$POSTGRES_SECRET_ARN" --set serviceAccount.roleArn="$APP_SECRETS_ROLE_ARN" --set config.corsOrigin="$CORS_ORIGIN" -n item-manager --wait --timeout 5m
 
       - name: Wait for rollout
         run: |
