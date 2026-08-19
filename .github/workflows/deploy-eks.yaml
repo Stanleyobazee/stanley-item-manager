@@ -106,8 +106,13 @@ jobs:
           helm upgrade --install csi-secrets-store secrets-store-csi-driver/secrets-store-csi-driver \
             -n kube-system --set syncSecret.enabled=true --wait
 
+          # --set serviceAccount.create=false: this chart and secrets-store-csi-driver above
+          # both default to creating a ServiceAccount literally named "secrets-store-csi-driver"
+          # (they're meant to share it) — as two separate Helm releases, the second one trying
+          # to *create* what the first already owns fails with an ownership-metadata conflict.
+          # Telling this one to just use the existing one instead of creating its own fixes it.
           helm upgrade --install secrets-provider-aws aws-secrets-manager/secrets-store-csi-driver-provider-aws \
-            -n kube-system --wait
+            -n kube-system --set serviceAccount.create=false --wait
 
       - name: Deploy app via Helm
         run: |
