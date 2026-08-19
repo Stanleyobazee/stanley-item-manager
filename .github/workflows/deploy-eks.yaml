@@ -88,6 +88,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Sanitize repo variables (strip stray whitespace/newlines pasted into GitHub Variables)
+        # A GitHub UI paste of `terraform output` easily picks up a leading space or trailing
+        # newline. That's invisible everywhere it gets echoed, but STS's ValidationError on
+        # AssumeRoleWithWebIdentity rejects a role ARN with even one stray leading space — this
+        # cost real debugging time once (APP_SECRETS_ROLE_ARN), so trim every vars.*-sourced
+        # value here, once, rather than trusting each one was pasted cleanly.
+        run: |
+          for var in AWS_REGION ECR_BACKEND_URL ECR_FRONTEND_URL EKS_CLUSTER_NAME POSTGRES_SECRET_ARN APP_SECRETS_ROLE_ARN ALERTMANAGER_SECRET_ARN ALERTMANAGER_SECRETS_ROLE_ARN CORS_ORIGIN; do
+            echo "$var=$(echo "${!var}" | xargs)" >> "$GITHUB_ENV"
+          done
+
       - name: Configure AWS credentials (OIDC — no static keys)
         uses: aws-actions/configure-aws-credentials@v4
         with:
