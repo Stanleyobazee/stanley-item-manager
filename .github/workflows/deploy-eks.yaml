@@ -117,18 +117,15 @@ jobs:
             -n kube-system --set secrets-store-csi-driver.syncSecret.enabled=true --wait
 
       - name: Deploy app via Helm
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push-ecr.outputs.image-tag }}
+        # Using real shell variables ($VAR, resolved by bash at runtime) instead of inline
+        # ${{ }} GitHub-expression substitution (resolved as raw text before bash ever sees
+        # the script) — the latter is fragile when a value is empty (like CORS_ORIGIN on this
+        # first run, before the LoadBalancer hostname exists yet) or contains shell-special
+        # characters. All values quoted so emptiness is never ambiguous with a missing arg.
         run: |
-          helm upgrade --install item-manager ./helm \
-            -f helm/values.yaml \
-            -f helm/values-eks.yaml \
-            --set backend.image=${{ env.ECR_BACKEND_URL }} \
-            --set backend.tag=${{ needs.build-and-push-ecr.outputs.image-tag }} \
-            --set frontend.image=${{ env.ECR_FRONTEND_URL }} \
-            --set frontend.tag=${{ needs.build-and-push-ecr.outputs.image-tag }} \
-            --set secretsManager.postgresSecretArn=${{ env.POSTGRES_SECRET_ARN }} \
-            --set serviceAccount.roleArn=${{ env.APP_SECRETS_ROLE_ARN }} \
-            --set config.corsOrigin=${{ env.CORS_ORIGIN }} \
-            -n item-manager --create-namespace --wait --timeout 5m
+          helm upgrade --install item-manager ./helm -f helm/values.yaml -f helm/values-eks.yaml --set backend.image="$ECR_BACKEND_URL" --set backend.tag="$IMAGE_TAG" --set frontend.image="$ECR_FRONTEND_URL" --set frontend.tag="$IMAGE_TAG" --set secretsManager.postgresSecretArn="$POSTGRES_SECRET_ARN" --set serviceAccount.roleArn="$APP_SECRETS_ROLE_ARN" --set config.corsOrigin="$CORS_ORIGIN" -n item-manager --create-namespace --wait --timeout 5m
 
       - name: Wait for rollout
         run: |
@@ -136,25 +133,24 @@ jobs:
           kubectl rollout status deployment/item-manager-frontend -n item-manager
 
       - name: Deploy monitoring stack
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        # Same fix as the app-deploy step above: real shell variables instead of inline ${{ }}
+        # substitution, so an empty/special-character value (e.g. GRAFANA_ADMIN_PASSWORD
+        # containing a $ or space) can't be misparsed before bash even runs.
         run: |
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
           # secretprovider-alertmanager.yaml is a plain manifest, not a Helm template — sed
           # the real secret ARN in before applying (values-eks.yaml's REPLACE_ME_* placeholders
           # are handled above via --set instead, since that file IS a Helm values file).
-          sed "s|REPLACE_ME_ALERTMANAGER_SECRET_ARN|${{ env.ALERTMANAGER_SECRET_ARN }}|" \
+          sed "s|REPLACE_ME_ALERTMANAGER_SECRET_ARN|$ALERTMANAGER_SECRET_ARN|" \
             helm/monitoring/eks/secretprovider-alertmanager.yaml | kubectl apply -f -
 
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo update
 
-          helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
-            -n monitoring --create-namespace \
-            -f helm/monitoring/values-monitoring.yaml \
-            -f helm/monitoring/values-monitoring-eks.yaml \
-            --set grafana.adminPassword=${{ secrets.GRAFANA_ADMIN_PASSWORD }} \
-            --set alertmanager.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${{ env.ALERTMANAGER_SECRETS_ROLE_ARN }} \
-            --wait --timeout 10m
+          helm upgrade --install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace -f helm/monitoring/values-monitoring.yaml -f helm/monitoring/values-monitoring-eks.yaml --set grafana.adminPassword="$GRAFANA_ADMIN_PASSWORD" --set alertmanager.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$ALERTMANAGER_SECRETS_ROLE_ARN" --wait --timeout 10m
 
           kubectl apply -f helm/monitoring/servicemonitor.yaml
           kubectl apply -f helm/monitoring/alert-rules.yaml
