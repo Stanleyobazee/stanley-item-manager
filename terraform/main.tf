@@ -17,6 +17,20 @@ data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
 
+locals {
+  # GitHub's OIDC `sub` claim now embeds immutable numeric owner/repo IDs alongside the
+  # names — e.g. "repo:Stanleyobazee@138321682/stanley-item-manager@1311034129:ref:refs/
+  # heads/eks", not the classic "repo:OWNER/REPO:ref:..." this was originally built
+  # against. Confirmed via CloudTrail (aws cloudtrail lookup-events --lookup-attributes
+  # AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity) after every other
+  # part of this trust policy checked out but AssumeRoleWithWebIdentity still failed —
+  # the `Username`/`principalId` field on the failed event shows exactly what GitHub
+  # actually sent. Wildcarding the numeric ID with `@*` (StringLike, not StringEquals)
+  # instead of hardcoding the literal numbers keeps this working if IDs are ever
+  # unavailable to read at plan time, while still requiring the real owner/repo names.
+  github_repo_parts = split("/", var.github_repository)
+}
+
 data "aws_iam_policy_document" "github_oidc_assume" {
   statement {
     effect  = "Allow"
@@ -32,7 +46,7 @@ data "aws_iam_policy_document" "github_oidc_assume" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/${var.github_branch}"]
+      values   = ["repo:${local.github_repo_parts[0]}@*/${local.github_repo_parts[1]}@*:ref:refs/heads/${var.github_branch}"]
     }
     condition {
       test     = "StringEquals"
