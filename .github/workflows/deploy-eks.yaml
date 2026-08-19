@@ -97,6 +97,12 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "${{ env.EKS_CLUSTER_NAME }}" --region "${{ env.AWS_REGION }}"
 
+      - name: Apply gp3 StorageClass (idempotent — safe to re-run every deploy)
+        # Not Terraform- or Helm-owned by design (see helm/eks/storageclass-gp3.yaml) — a
+        # session-based cluster (terraform destroy/apply) never keeps this around on its own,
+        # so it must be (re-)applied here rather than treated as a one-time manual step.
+        run: kubectl apply -f helm/eks/storageclass-gp3.yaml
+
       - name: Install Secrets Store CSI Driver + AWS provider (idempotent — safe to re-run every deploy)
         run: |
           helm repo add aws-secrets-manager https://aws.github.io/secrets-store-csi-driver-provider-aws
