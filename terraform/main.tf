@@ -5,14 +5,16 @@
 
 data "aws_caller_identity" "current" {}
 
-data "tls_certificate" "github" {
+# GitHub's OIDC provider URL is a per-AWS-ACCOUNT singleton, not per-project — if any other
+# Terraform config (or a manual setup) in this account already registered
+# token.actions.githubusercontent.com, IAM will reject a second `resource` for the same URL
+# with "EntityAlreadyExists". Referenced here as a data source instead of a resource this
+# project owns, specifically so `terraform destroy` in this repo can never delete a provider
+# some other project might still depend on. If your account doesn't have one yet, this data
+# lookup will fail instead — see SECRETS.md's "GitHub OIDC" section for the one-time
+# `aws iam create-open-id-connect-provider` command to create it by hand first.
+data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
-}
-
-resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.github.certificates[0].sha1_fingerprint]
 }
 
 data "aws_iam_policy_document" "github_oidc_assume" {
@@ -22,7 +24,7 @@ data "aws_iam_policy_document" "github_oidc_assume" {
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
     }
 
     # Scoped to this exact repo + branch — a workflow run from a fork or a different
@@ -184,6 +186,12 @@ module "eks" {
 
   cluster_endpoint_public_access = true
 
+  # Without this, NOBODY has kubectl access to the cluster by default in this module —
+  # unlike the raw AWS EKS API (which auto-grants the creating principal admin access),
+  # terraform-aws-modules/eks/aws opts out of that unless told otherwise. This grants
+  # whichever IAM identity runs `terraform apply` an automatic cluster-admin access entry.
+  enable_cluster_creator_admin_permissions = true
+
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
@@ -258,6 +266,7 @@ module "eks" {
 resource "aws_ecr_repository" "backend" {
   name                 = "${var.project_name}-backend"
   image_tag_mutability = "MUTABLE"
+  force_delete         = true # lets `terraform destroy` remove this even if it has images pushed to it
 
   image_scanning_configuration {
     scan_on_push = true
@@ -267,6 +276,7 @@ resource "aws_ecr_repository" "backend" {
 resource "aws_ecr_repository" "frontend" {
   name                 = "${var.project_name}-frontend"
   image_tag_mutability = "MUTABLE"
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -323,8 +333,12 @@ resource "aws_kms_alias" "secrets" {
 # real secrets" section for what this means for protecting the state bucket.
 
 resource "aws_secretsmanager_secret" "postgres_password" {
-  name       = "${var.project_name}/postgres-password"
-  kms_key_id = aws_kms_key.secrets.arn
+  name                    = "${var.project_name}/postgres-password"
+  kms_key_id              = aws_kms_key.secrets.arn
+  recovery_window_in_days = 0 # immediate delete on `terraform destroy` — this is a session-based demo
+  # cluster's secret, not a production credential worth a 7-30 day accidental-deletion safety
+  # net. Without this, a destroyed-then-recreated secret with the same name fails to create
+  # ("still scheduled for deletion") until that window elapses.
 }
 
 resource "aws_secretsmanager_secret_version" "postgres_password" {
@@ -333,8 +347,9 @@ resource "aws_secretsmanager_secret_version" "postgres_password" {
 }
 
 resource "aws_secretsmanager_secret" "alertmanager_smtp" {
-  name       = "${var.project_name}/alertmanager-smtp-password"
-  kms_key_id = aws_kms_key.secrets.arn
+  name                    = "${var.project_name}/alertmanager-smtp-password"
+  kms_key_id              = aws_kms_key.secrets.arn
+  recovery_window_in_days = 0 # see postgres_password above for why
 }
 
 resource "aws_secretsmanager_secret_version" "alertmanager_smtp" {

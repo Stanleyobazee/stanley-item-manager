@@ -28,9 +28,9 @@ variable "github_branch" {
 }
 
 variable "kubernetes_version" {
-  description = "EKS control plane Kubernetes version."
+  description = "EKS control plane Kubernetes version. EKS only allows upgrading one minor version per apply — bump this by one (1.32, then 1.33, then 1.34) and re-apply between each step, waiting for the cluster to finish upgrading before the next bump. Currently mid-upgrade away from 1.31's extended-support window; target is 1.34+ per the AWS console's own recommendation."
   type        = string
-  default     = "1.31"
+  default     = "1.34"
 }
 
 variable "node_instance_type" {
