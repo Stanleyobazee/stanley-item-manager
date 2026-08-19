@@ -97,22 +97,24 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "${{ env.EKS_CLUSTER_NAME }}" --region "${{ env.AWS_REGION }}"
 
-      - name: Install Secrets Store CSI Driver (idempotent — safe to re-run every deploy)
+      - name: Install Secrets Store CSI Driver + AWS provider (idempotent — safe to re-run every deploy)
         run: |
-          helm repo add secrets-store-csi-driver https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts
           helm repo add aws-secrets-manager https://aws.github.io/secrets-store-csi-driver-provider-aws
           helm repo update
 
-          helm upgrade --install csi-secrets-store secrets-store-csi-driver/secrets-store-csi-driver \
-            -n kube-system --set syncSecret.enabled=true --wait
+          # aws-secrets-manager/secrets-store-csi-driver-provider-aws bundles the base
+          # secrets-store-csi-driver chart as a SUBCHART DEPENDENCY (secrets-store-csi-
+          # driver.install: true by default, confirmed via `helm show values`) — it's meant
+          # to be installed standalone, not alongside a separately-installed copy of that
+          # same base chart. Installing both (as earlier versions of this workflow did)
+          # creates two Helm releases fighting over identically-named resources
+          # (fullnameOverride: secrets-store-csi-driver is hardcoded in this chart's own
+          # default values), which fails with an ownership-metadata conflict. Clean up any
+          # leftover standalone install from an earlier attempt before this one takes over:
+          helm uninstall csi-secrets-store -n kube-system || true
 
-          # --set serviceAccount.create=false: this chart and secrets-store-csi-driver above
-          # both default to creating a ServiceAccount literally named "secrets-store-csi-driver"
-          # (they're meant to share it) — as two separate Helm releases, the second one trying
-          # to *create* what the first already owns fails with an ownership-metadata conflict.
-          # Telling this one to just use the existing one instead of creating its own fixes it.
           helm upgrade --install secrets-provider-aws aws-secrets-manager/secrets-store-csi-driver-provider-aws \
-            -n kube-system --set serviceAccount.create=false --wait
+            -n kube-system --set secrets-store-csi-driver.syncSecret.enabled=true --wait
 
       - name: Deploy app via Helm
         run: |
