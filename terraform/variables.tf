@@ -40,9 +40,9 @@ variable "node_instance_type" {
 }
 
 variable "node_desired_size" {
-  description = "Desired node count. Kept at 1 to minimize cost — this is a demo/learning cluster, not built for HA."
+  description = "Desired node count. Bumped from 1 to 2 — a single t3.medium couldn't fit the app (postgres, 2x backend, 2x frontend) plus the full kube-prometheus-stack (Prometheus, Grafana, Alertmanager, operator, node-exporter, kube-state-metrics) at once: CPU/memory limits were 137%/159% overcommitted, Grafana was OOMKilling in a restart loop, and the operator pod couldn't schedule at all. node_max_size was already 2 in anticipation of this."
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "node_min_size" {

@@ -88,6 +88,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Sanitize repo variables (strip stray whitespace/newlines pasted into GitHub Variables)
+        # A GitHub UI paste of `terraform output` easily picks up a leading space or trailing
+        # newline. That's invisible everywhere it gets echoed, but STS's ValidationError on
+        # AssumeRoleWithWebIdentity rejects a role ARN with even one stray leading space — this
+        # cost real debugging time once (APP_SECRETS_ROLE_ARN), so trim every vars.*-sourced
+        # value here, once, rather than trusting each one was pasted cleanly.
+        run: |
+          for var in AWS_REGION ECR_BACKEND_URL ECR_FRONTEND_URL EKS_CLUSTER_NAME POSTGRES_SECRET_ARN APP_SECRETS_ROLE_ARN ALERTMANAGER_SECRET_ARN ALERTMANAGER_SECRETS_ROLE_ARN CORS_ORIGIN; do
+            echo "$var=$(echo "${!var}" | xargs)" >> "$GITHUB_ENV"
+          done
+
       - name: Configure AWS credentials (OIDC — no static keys)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -96,6 +107,12 @@ jobs:
 
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "${{ env.EKS_CLUSTER_NAME }}" --region "${{ env.AWS_REGION }}"
+
+      - name: Apply gp3 StorageClass (idempotent — safe to re-run every deploy)
+        # Not Terraform- or Helm-owned by design (see helm/eks/storageclass-gp3.yaml) — a
+        # session-based cluster (terraform destroy/apply) never keeps this around on its own,
+        # so it must be (re-)applied here rather than treated as a one-time manual step.
+        run: kubectl apply -f helm/eks/storageclass-gp3.yaml
 
       - name: Install Secrets Store CSI Driver + AWS provider (idempotent — safe to re-run every deploy)
         run: |
@@ -125,7 +142,13 @@ jobs:
         # first run, before the LoadBalancer hostname exists yet) or contains shell-special
         # characters. All values quoted so emptiness is never ambiguous with a missing arg.
         run: |
-          helm upgrade --install item-manager ./helm -f helm/values.yaml -f helm/values-eks.yaml --set backend.image="$ECR_BACKEND_URL" --set backend.tag="$IMAGE_TAG" --set frontend.image="$ECR_FRONTEND_URL" --set frontend.tag="$IMAGE_TAG" --set secretsManager.postgresSecretArn="$POSTGRES_SECRET_ARN" --set serviceAccount.roleArn="$APP_SECRETS_ROLE_ARN" --set config.corsOrigin="$CORS_ORIGIN" -n item-manager --create-namespace --wait --timeout 5m
+          # Helm's --create-namespace errors out ("already exists") if the namespace exists
+          # but wasn't created by Helm itself (e.g. from earlier manual kubectl/helm testing
+          # against this cluster) — same idempotent apply pattern already used below for the
+          # monitoring namespace, so re-running this step is always safe either way.
+          kubectl create namespace item-manager --dry-run=client -o yaml | kubectl apply -f -
+
+          helm upgrade --install item-manager ./helm -f helm/values.yaml -f helm/values-eks.yaml --set backend.image="$ECR_BACKEND_URL" --set backend.tag="$IMAGE_TAG" --set frontend.image="$ECR_FRONTEND_URL" --set frontend.tag="$IMAGE_TAG" --set secretsManager.postgresSecretArn="$POSTGRES_SECRET_ARN" --set serviceAccount.roleArn="$APP_SECRETS_ROLE_ARN" --set config.corsOrigin="$CORS_ORIGIN" -n item-manager --wait --timeout 5m
 
       - name: Wait for rollout
         run: |

@@ -16,3 +16,4 @@ terraform/override.tf
 terraform/override.tf.json
 *.tfplan
 SECRETS.md
+screenshots/

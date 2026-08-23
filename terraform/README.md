@@ -25,7 +25,7 @@ AWS Account
 │   ├── Add-ons ──────────────────────── vpc-cni, coredns, kube-proxy, aws-ebs-csi-driver
 │   └── Access entry ────────────────── github_actions role → AmazonEKSClusterAdminPolicy
 │
-├── ECR
+├── ECR (lifecycle policy: keep only the last 5 images, any tag — see terraform/main.tf)
 │   ├── item-manager-eks-backend
 │   └── item-manager-eks-frontend
 │
@@ -40,6 +40,24 @@ AWS Account
     ├── item-manager-eks/postgres-password
     └── item-manager-eks/alertmanager-smtp-password
 ```
+
+> 🖼️ **Screenshots:** AWS Console → EKS → `item-manager-eks` — cluster Overview tab
+> (upgrade insights) and Pods list, confirming the cluster and core add-ons are healthy.
+>
+> *(A cluster-overview screenshot showing the Cluster/IAM role ARNs was pulled from here —
+> it exposed the real AWS Account ID, which doesn't belong in a public file. Re-add a
+> cropped version once retaken.)*
+
+![EKS cluster upgrade insights](./screenshots/eks-upgrade-insights.png)
+![EKS cluster pods list](./screenshots/eks-cluster-pods.png)
+
+ECR before the lifecycle policy kicked in — 33 images accumulated across this whole session's
+repeated build/push cycles, exactly the unbounded growth the policy above exists to prevent:
+
+![ECR images before the lifecycle policy trimmed them](./screenshots/ecr-images-before-lifecycle-policy.png)
+
+*(A screenshot of the 2 ECR repos list was pulled from here for exposing the real AWS Account
+ID in the repository URIs — re-add a cropped version once retaken.)*
 
 ## Read this before running `terraform apply`
 
@@ -74,6 +92,11 @@ The NAT Gateway line is a deliberate choice here, not a default: nodes sit in pr
 subnets and reach the internet (ECR pulls, AWS API calls) only through it, rather than
 holding public IPs directly. That's a more conventional network posture, at ~$33/month more
 than a public-subnet-only alternative.
+
+> 🖼️ **Screenshot:** AWS Console → Billing → Cost Explorer (or the CloudWatch billing alarm
+> you set up per the note above), showing actual spend for a session — useful as a real-world
+> sanity check against the table above.
+> ![AWS Cost Explorer showing session spend](./screenshots/cost-explorer.png)
 
 ## GitHub Actions RBAC scope
 
@@ -120,6 +143,10 @@ aws s3api put-bucket-versioning --bucket <a-globally-unique-bucket-name> --versi
 aws s3api put-bucket-encryption --bucket <a-globally-unique-bucket-name> --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
 ```
 
+*(A screenshot of the bucket's `terraform.tfstate` object in the S3 console was pulled from
+here for exposing the real AWS Account ID in the account switcher — re-add a cropped version
+once retaken.)*
+
 ## Apply
 
 ```bash
@@ -132,6 +159,13 @@ terraform plan    # review what it's about to create before applying
 terraform apply
 ```
 
+> 🖼️ **Screenshots:** a real `terraform apply` plan (80 resources to add, 0 to change/destroy
+> — a fresh cluster) and the `Outputs:` block once it completes (account ID blurred by hand
+> before this screenshot was taken — worth doing the same if you ever paste your own).
+
+![terraform plan output](./screenshots/terraform-plan.png)
+![terraform apply outputs](./screenshots/terraform-output.png)
+
 Takes 10-15 minutes — EKS cluster creation is slow. Once it completes, the real secret
 values you put in `terraform.tfvars` are already in Secrets Manager — no separate
 `put-secret-value` step needed this time:
@@ -142,8 +176,51 @@ terraform output   # see everything you'll need for Phase B/C (ECR URLs, role AR
 # Point kubectl/helm at the new cluster:
 $(terraform output -raw kubeconfig_command)
 
-kubectl get nodes   # should show 1 node, Ready, within a few minutes of the node group finishing
+kubectl get nodes   # should show 1-2 nodes, Ready, within a few minutes of the node group finishing
 ```
+
+> 🖼️ **Screenshots:** AWS Console → EC2 → Instances, filtered to the worker nodes — instance
+> details and Tags tab, showing `ManagedBy: terraform` / `Project: item-manager-eks` and
+> confirming the node-tagging from `main.tf` took effect.
+>
+> *(One instance-details screenshot was pulled from here for exposing the real AWS Account ID
+> in its Instance ARN — re-add a cropped version once retaken.)*
+
+![EC2 worker node details](./screenshots/ec2-node-details.png)
+![EC2 worker node tags, instance 1](./screenshots/ec2-node-tags-1.png)
+![EC2 worker node tags, instance 2](./screenshots/ec2-node-tags-2.png)
+
+## Verify the deployment
+
+Once `deploy-eks.yaml` (or a manual `helm upgrade --install`, per `../SECRETS.md`'s Setup
+Guide) has run, this is what a genuinely healthy deployment looks like — not just `kubectl get
+pods` showing `Running`, but the app actually reachable and the monitoring stack actually
+scraping it:
+
+![The app live on its real LoadBalancer hostname, items created successfully](./screenshots/app-working-live.png)
+
+That's the end state. Getting there included a real bug worth knowing about if you hit the
+same symptom: `POST /api/items` returning a bare `502 Bad Gateway` with zero backend request
+logs, while the page itself loaded fine. Root cause was `frontend/nginx.conf`'s `resolver`
+directive hardcoded to Minikube's CoreDNS ClusterIP (`10.96.0.10`) — meaningless on EKS, which
+uses a completely different Service CIDR. Fixed by resolving the real nameserver from
+`/etc/resolv.conf` at container startup instead (see `frontend/resolve-dns.sh` and
+`frontend/Dockerfile`'s `/docker-entrypoint.d/` hook) rather than hardcoding any one cluster's
+DNS IP:
+
+![The 502 error this produced, before the nginx resolver fix](./screenshots/bug-502-nginx-resolver.png)
+
+Monitoring evidence, once the stack is up (port-forward `monitoring-grafana`/`monitoring-prometheus`
+per `../SECRETS.md` or `../helm/monitoring/README.md` to view these yourself):
+
+![kubectl get svc -n monitoring — every component with a stable ClusterIP](./screenshots/monitoring-services.png)
+![Grafana: namespace-level pod resource usage for item-manager](./screenshots/grafana-namespace-dashboard.png)
+![Grafana: per-pod network I/O detail](./screenshots/grafana-pod-dashboard.png)
+![Grafana: Alertmanager overview showing a real alert actively firing](./screenshots/alertmanager-overview.png)
+![Grafana: CoreDNS request-rate dashboard](./screenshots/coredns-dashboard.png)
+![Grafana: Kubernetes API server availability/SLO dashboard](./screenshots/k8s-api-server-dashboard.png)
+![Grafana: cluster-wide compute resource usage across namespaces](./screenshots/cluster-compute-resources.png)
+![Prometheus: every ServiceMonitor target UP, including item-manager-backend](./screenshots/prometheus-targets.png)
 
 ## Destroy
 
