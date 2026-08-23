@@ -1,5 +1,7 @@
 # Stanley's Item Manager
 
+![Item Manager architecture — deployed two production-style ways](docs/architecture.png)
+
 A simple three-tier application (Frontend → Backend → PostgreSQL) containerized with Docker and deployed to Kubernetes via Minikube.
 
 ## Deployment Paths
