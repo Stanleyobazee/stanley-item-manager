@@ -1,4 +1,5 @@
 # Stanley's Item Manager
+![CI/CD](https://github.com/Stanleyobazee/stanley-item-manager/actions/workflows/ci-cd.yaml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Item Manager architecture — deployed two production-style ways](docs/architecture.png)
 
